@@ -5,12 +5,13 @@ import (
 	"fmt"
 	"log"
 	"net"
+	"strings"
 )
 
 func main() {
 	port := ":6379"
 
-	listener, err := net.Listen("tcp", port)
+	listener, err := net.Listen("tcp", "127.0.0.1"+port)
 
 	if err != nil {
 		log.Fatalf("Unable to start server: %v", err)
@@ -34,7 +35,11 @@ func main() {
 func handleConnection(conn net.Conn) {
 	defer conn.Close()
 
-	fmt.Printf("Client connected: %s\n", conn.RemoteAddr().String())
+	isAuthenticated := false
+
+	const password = "mysecretpassword"
+
+	conn.Write([]byte("Connected to Redis-lite please authenticate with AUTH <passwword>"))
 
 	conn.Write([]byte("Connected to Redis-lite!\n"))
 
@@ -42,15 +47,36 @@ func handleConnection(conn net.Conn) {
 
 	for scanner.Scan() {
 		text := scanner.Text()
+		parts := strings.Fields(text)
 
-		fmt.Printf("Received: %s\n", text)
+		if len(parts) == 0 {
+			continue
+		}
 
-		conn.Write([]byte("You said: " + text + "\n"))
+		command := strings.ToUpper(parts[0])
 
-		if text == "exit" {
+		if command == "exit" {
 			conn.Write([]byte("Goodbye!\n"))
 			break
 		}
+
+		if command == "AUTH" {
+			if len(parts) > 1 && parts[1] == password {
+				isAuthenticated = true
+				conn.Write([]byte("OK\n"))
+			} else {
+				conn.Write([]byte("ERR invalid password\n"))
+			}
+			continue
+		}
+
+		if !isAuthenticated {
+			conn.Write([]byte("ERR Use AUTH <password>\n"))
+			continue
+		}
+		fmt.Printf("Received: %s\n", text)
+
+		conn.Write([]byte("You said: " + text + "\n"))
 
 	}
 }
