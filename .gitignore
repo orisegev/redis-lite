@@ -24,3 +24,5 @@ vendor/
 Thumbs.db
 db.json
 .DS_Store
+
+.env

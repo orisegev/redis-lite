@@ -9,12 +9,10 @@ import (
 	"github.com/orisegev/redis-lite/internal/storage"
 )
 
-func handleConnection(conn net.Conn, db *storage.Engine) {
+func handleConnection(conn net.Conn, db *storage.Engine, password string) {
 	defer conn.Close()
 
 	isAuthenticated := false
-
-	const password = "mysecretpassword"
 
 	conn.Write([]byte("Connected to Redis-lite please authenticate with AUTH <passwword>"))
 
@@ -32,7 +30,7 @@ func handleConnection(conn net.Conn, db *storage.Engine) {
 
 		command := strings.ToUpper(parts[0])
 
-		if command == "exit" {
+		if command == "EXIT" {
 			conn.Write([]byte("Goodbye!\n"))
 			break
 		}
@@ -97,7 +95,7 @@ func handleConnection(conn net.Conn, db *storage.Engine) {
 				conn.Write([]byte("(empty list or set)\n"))
 			} else {
 				for i, key := range keys {
-					conn.Write([]byte(fmt.Sprintf(" %d) %s\n", i+1, key)))
+					fmt.Fprintf(conn, "%d) %s\n", i+1, key)
 				}
 			}
 		default:
