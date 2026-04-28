@@ -6,12 +6,16 @@ import (
 	"log"
 	"net"
 	"strings"
+
+	"github.com/orisegev/redis-lite/internal/storage"
 )
 
 func main() {
 	port := ":6379"
 
 	listener, err := net.Listen("tcp", "127.0.0.1"+port)
+
+	db := storage.NewEngine()
 
 	if err != nil {
 		log.Fatalf("Unable to start server: %v", err)
@@ -28,11 +32,11 @@ func main() {
 			fmt.Printf("Error accepting connection: %v\n", err)
 		}
 
-		go handleConnection(conn)
+		go handleConnection(conn, db)
 	}
 }
 
-func handleConnection(conn net.Conn) {
+func handleConnection(conn net.Conn, db *storage.Engine) {
 	defer conn.Close()
 
 	isAuthenticated := false
@@ -74,9 +78,58 @@ func handleConnection(conn net.Conn) {
 			conn.Write([]byte("ERR Use AUTH <password>\n"))
 			continue
 		}
-		fmt.Printf("Received: %s\n", text)
 
-		conn.Write([]byte("You said: " + text + "\n"))
+		switch command {
+		case "SET":
+			if len(parts) < 3 {
+				conn.Write([]byte("ERR Usage: GET <key>\\n"))
+				continue
+			}
+
+			db.Set(parts[1], parts[2])
+			conn.Write([]byte("OK\n"))
+
+		case "GET":
+			if len(parts) < 2 {
+				conn.Write([]byte("ERR usage: GET <key>\n"))
+				continue
+			}
+			val, exists := db.Get(parts[1])
+
+			if !exists {
+				conn.Write([]byte("(nill)\n"))
+			} else {
+				conn.Write([]byte(val + "\n"))
+			}
+		case "DEL":
+			if len(parts) < 2 {
+				conn.Write([]byte("ERR Usage: DEL <key>\n"))
+				continue
+			}
+
+			_, exists := db.Get(parts[1])
+
+			if !exists {
+				conn.Write([]byte("Key Not exists\n"))
+				continue
+			}
+
+			db.Delete(parts[1])
+			conn.Write([]byte("OK\n"))
+
+		case "KEYS":
+			keys := db.ListKeys()
+
+			if len(keys) == 0 {
+				conn.Write([]byte("(empty list or set)\n"))
+			} else {
+				for i, key := range keys {
+					conn.Write([]byte(fmt.Sprintf(" %d) %s\n", i+1, key)))
+				}
+			}
+		default:
+			conn.Write([]byte("ERR unknown command '" + command + "'\n"))
+		}
 
 	}
 }
