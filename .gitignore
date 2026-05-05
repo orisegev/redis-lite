@@ -30,6 +30,10 @@ db.json
 # Build output
 bin/
 
+# Snapshot file
+dump.json
+*.tmp
+
 # Claude Code
 .claude/
 CLAUDE.md

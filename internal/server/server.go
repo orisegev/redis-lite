@@ -21,8 +21,11 @@ type Server struct {
 
 func New(cfg config.Config) *Server {
 	return &Server{
-		cfg:     cfg,
-		storage: storage.NewEngine(),
+		cfg: cfg,
+		storage: storage.NewEngine(storage.Options{
+			SnapshotPath:     cfg.SnapshotPath,
+			SnapshotInterval: cfg.SnapshotInterval,
+		}),
 	}
 }
 
