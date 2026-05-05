@@ -1,7 +1,6 @@
 package server
 
 import (
-	"bufio"
 	"context"
 	"fmt"
 	"log"
@@ -11,6 +10,7 @@ import (
 	"time"
 
 	"github.com/orisegev/redis-lite/internal/config"
+	"github.com/orisegev/redis-lite/internal/resp"
 	"github.com/orisegev/redis-lite/internal/storage"
 )
 
@@ -63,100 +63,104 @@ func (s *Server) Start(ctx context.Context) error {
 func (s *Server) handleConnection(conn net.Conn) {
 	defer conn.Close()
 
+	reader := resp.NewReader(conn)
+	writer := resp.NewWriter(conn)
 	authenticated := false
-	fmt.Fprint(conn, "Connected to redis-lite. Authenticate with AUTH <password>\n")
 
-	scanner := bufio.NewScanner(conn)
-	for scanner.Scan() {
-		parts := strings.Fields(scanner.Text())
-		if len(parts) == 0 {
+	for {
+		val, err := reader.ReadValue()
+		if err != nil {
+			return
+		}
+
+		if val.Type != '*' || len(val.Elems) == 0 {
+			writer.WriteError("invalid command format")
 			continue
+		}
+
+		parts := make([]string, len(val.Elems))
+		for i, e := range val.Elems {
+			parts[i] = e.Str
 		}
 		cmd := strings.ToUpper(parts[0])
 
 		switch cmd {
 		case "EXIT":
-			fmt.Fprint(conn, "Goodbye!\n")
+			writer.WriteSimpleString("Goodbye!")
 			return
 		case "AUTH":
 			if len(parts) > 1 && parts[1] == s.cfg.Password {
 				authenticated = true
-				fmt.Fprint(conn, "OK\n")
+				writer.WriteSimpleString("OK")
 			} else {
-				fmt.Fprint(conn, "ERR invalid password\n")
+				writer.WriteError("invalid password")
 			}
 		default:
 			if !authenticated {
-				fmt.Fprint(conn, "ERR authenticate with AUTH <password>\n")
+				writer.WriteError("authenticate with AUTH <password>")
 				continue
 			}
-			s.dispatch(conn, cmd, parts)
+			s.dispatch(writer, cmd, parts)
 		}
 	}
 }
 
-func (s *Server) dispatch(conn net.Conn, cmd string, parts []string) {
+func (s *Server) dispatch(w *resp.Writer, cmd string, parts []string) {
 	switch cmd {
 	case "SET":
 		if len(parts) < 3 {
-			fmt.Fprint(conn, "ERR usage: SET <key> <value> [EX <seconds>]\n")
+			w.WriteError("usage: SET <key> <value> [EX <seconds>]")
 			return
 		}
 		var ttl time.Duration
 		if len(parts) >= 5 && strings.ToUpper(parts[3]) == "EX" {
 			secs, err := strconv.Atoi(parts[4])
 			if err != nil || secs <= 0 {
-				fmt.Fprint(conn, "ERR invalid expire time\n")
+				w.WriteError("invalid expire time")
 				return
 			}
 			ttl = time.Duration(secs) * time.Second
 		}
 		s.storage.Set(parts[1], parts[2], ttl)
-		fmt.Fprint(conn, "OK\n")
+		w.WriteSimpleString("OK")
 
 	case "GET":
 		if len(parts) < 2 {
-			fmt.Fprint(conn, "ERR usage: GET <key>\n")
+			w.WriteError("usage: GET <key>")
 			return
 		}
 		val, ok := s.storage.Get(parts[1])
 		if !ok {
-			fmt.Fprint(conn, "(nil)\n")
+			w.WriteNull()
 		} else {
-			fmt.Fprint(conn, val+"\n")
+			w.WriteBulkString(val)
 		}
 
 	case "DEL":
 		if len(parts) < 2 {
-			fmt.Fprint(conn, "ERR usage: DEL <key>\n")
+			w.WriteError("usage: DEL <key>")
 			return
 		}
 		_, ok := s.storage.Get(parts[1])
 		if !ok {
-			fmt.Fprint(conn, "(integer) 0\n")
+			w.WriteInteger(0)
 			return
 		}
 		s.storage.Delete(parts[1])
-		fmt.Fprint(conn, "(integer) 1\n")
+		w.WriteInteger(1)
 
 	case "KEYS":
 		keys := s.storage.ListKeys()
-		if len(keys) == 0 {
-			fmt.Fprint(conn, "(empty list)\n")
-		} else {
-			for i, k := range keys {
-				fmt.Fprintf(conn, "%d) %s\n", i+1, k)
-			}
-		}
+		w.WriteArray(keys)
 
 	case "TTL":
 		if len(parts) < 2 {
-			fmt.Fprint(conn, "ERR usage: TTL <key>\n")
+			w.WriteError("usage: TTL <key>")
 			return
 		}
-		fmt.Fprintf(conn, "(integer) %d\n", s.storage.TTL(parts[1]))
+		w.WriteInteger(s.storage.TTL(parts[1]))
 
 	default:
-		fmt.Fprintf(conn, "ERR unknown command '%s'\n", cmd)
+		w.WriteError(fmt.Sprintf("unknown command '%s'", cmd))
 	}
 }
