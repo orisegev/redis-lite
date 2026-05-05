@@ -27,6 +27,9 @@ db.json
 
 .env
 
+# Build output
+bin/
+
 # Claude Code
 .claude/
 CLAUDE.md

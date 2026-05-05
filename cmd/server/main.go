@@ -1,51 +1,24 @@
 package main
 
 import (
-	"fmt"
+	"context"
 	"log"
-	"net"
 	"os"
+	"os/signal"
+	"syscall"
 
-	"github.com/joho/godotenv"
-	"github.com/orisegev/redis-lite/internal/storage"
+	"github.com/orisegev/redis-lite/internal/config"
+	"github.com/orisegev/redis-lite/internal/server"
 )
 
 func main() {
+	cfg := config.Load()
+	srv := server.New(cfg)
 
-	if err := godotenv.Load(); err != nil {
-		log.Println("No .env file found")
-	}
-	port := os.Getenv("PORT")
-	password := os.Getenv("AUTH_PASSWORD")
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
 
-	if password == "" {
-		password = "defaultpassword"
-		log.Println("Warning: No AUTH_PASSWORD set, using default")
-	}
-
-	address := net.JoinHostPort("0.0.0.0", port)
-
-	listener, err := net.Listen("tcp", address)
-
-	if err != nil {
-		log.Fatalf("Unable to start server: %v", err)
-	}
-
-	defer listener.Close()
-
-	db := storage.NewEngine()
-
-	defer listener.Close()
-
-	fmt.Printf("Redis-lite server is running on %s\n", address)
-
-	for {
-		conn, err := listener.Accept()
-
-		if err != nil {
-			fmt.Printf("Error accepting connection: %v\n", err)
-		}
-
-		go handleConnection(conn, db, password)
+	if err := srv.Start(ctx); err != nil {
+		log.Fatal(err)
 	}
 }
