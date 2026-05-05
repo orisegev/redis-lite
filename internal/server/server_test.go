@@ -6,6 +6,7 @@ import (
 	"net"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/orisegev/redis-lite/internal/config"
 )
@@ -123,5 +124,78 @@ func TestUnknownCommand(t *testing.T) {
 
 	if got := send(t, r, client, "PING"); !strings.HasPrefix(got, "ERR") {
 		t.Errorf("expected ERR for unknown command, got %q", got)
+	}
+}
+
+func TestSetEx_ExpiresKey(t *testing.T) {
+	srv := newTestServer()
+	client, cleanup := startPipe(t, srv)
+	defer cleanup()
+	r := bufio.NewReader(client)
+	authenticate(t, r, client)
+
+	send(t, r, client, "SET temp value EX 1")
+	if got := send(t, r, client, "GET temp"); got != "value" {
+		t.Fatalf("expected value before expiry, got %q", got)
+	}
+
+	time.Sleep(1100 * time.Millisecond)
+
+	if got := send(t, r, client, "GET temp"); got != "(nil)" {
+		t.Errorf("expected (nil) after expiry, got %q", got)
+	}
+}
+
+func TestSetEx_InvalidExpiry(t *testing.T) {
+	srv := newTestServer()
+	client, cleanup := startPipe(t, srv)
+	defer cleanup()
+	r := bufio.NewReader(client)
+	authenticate(t, r, client)
+
+	if got := send(t, r, client, "SET k v EX notanumber"); !strings.HasPrefix(got, "ERR") {
+		t.Errorf("expected ERR for invalid EX, got %q", got)
+	}
+	if got := send(t, r, client, "SET k v EX 0"); !strings.HasPrefix(got, "ERR") {
+		t.Errorf("expected ERR for zero EX, got %q", got)
+	}
+}
+
+func TestTTL_NoExpiry(t *testing.T) {
+	srv := newTestServer()
+	client, cleanup := startPipe(t, srv)
+	defer cleanup()
+	r := bufio.NewReader(client)
+	authenticate(t, r, client)
+
+	send(t, r, client, "SET k v")
+	if got := send(t, r, client, "TTL k"); got != "(integer) -1" {
+		t.Errorf("expected (integer) -1, got %q", got)
+	}
+}
+
+func TestTTL_MissingKey(t *testing.T) {
+	srv := newTestServer()
+	client, cleanup := startPipe(t, srv)
+	defer cleanup()
+	r := bufio.NewReader(client)
+	authenticate(t, r, client)
+
+	if got := send(t, r, client, "TTL nope"); got != "(integer) -2" {
+		t.Errorf("expected (integer) -2, got %q", got)
+	}
+}
+
+func TestTTL_WithExpiry(t *testing.T) {
+	srv := newTestServer()
+	client, cleanup := startPipe(t, srv)
+	defer cleanup()
+	r := bufio.NewReader(client)
+	authenticate(t, r, client)
+
+	send(t, r, client, "SET k v EX 60")
+	got := send(t, r, client, "TTL k")
+	if got != "(integer) 59" && got != "(integer) 60" {
+		t.Errorf("expected TTL ~60, got %q", got)
 	}
 }

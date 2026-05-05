@@ -6,7 +6,9 @@ import (
 	"fmt"
 	"log"
 	"net"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/orisegev/redis-lite/internal/config"
 	"github.com/orisegev/redis-lite/internal/storage"
@@ -90,10 +92,19 @@ func (s *Server) dispatch(conn net.Conn, cmd string, parts []string) {
 	switch cmd {
 	case "SET":
 		if len(parts) < 3 {
-			fmt.Fprint(conn, "ERR usage: SET <key> <value>\n")
+			fmt.Fprint(conn, "ERR usage: SET <key> <value> [EX <seconds>]\n")
 			return
 		}
-		s.storage.Set(parts[1], parts[2])
+		var ttl time.Duration
+		if len(parts) >= 5 && strings.ToUpper(parts[3]) == "EX" {
+			secs, err := strconv.Atoi(parts[4])
+			if err != nil || secs <= 0 {
+				fmt.Fprint(conn, "ERR invalid expire time\n")
+				return
+			}
+			ttl = time.Duration(secs) * time.Second
+		}
+		s.storage.Set(parts[1], parts[2], ttl)
 		fmt.Fprint(conn, "OK\n")
 
 	case "GET":
@@ -130,6 +141,13 @@ func (s *Server) dispatch(conn net.Conn, cmd string, parts []string) {
 				fmt.Fprintf(conn, "%d) %s\n", i+1, k)
 			}
 		}
+
+	case "TTL":
+		if len(parts) < 2 {
+			fmt.Fprint(conn, "ERR usage: TTL <key>\n")
+			return
+		}
+		fmt.Fprintf(conn, "(integer) %d\n", s.storage.TTL(parts[1]))
 
 	default:
 		fmt.Fprintf(conn, "ERR unknown command '%s'\n", cmd)
