@@ -1,0 +1,9 @@
+services:
+  redis-lite:
+    build: .
+    ports:
+      - "6379:6379"
+    environment:
+      PORT: "6379"
+      AUTH_PASSWORD: "changeme"
+    restart: unless-stopped
