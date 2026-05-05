@@ -23,7 +23,7 @@ func main() {
 		log.Println("Warning: No AUTH_PASSWORD set, using default")
 	}
 
-	address := net.JoinHostPort("127.0.0.1", port)
+	address := net.JoinHostPort("0.0.0.0", port)
 
 	listener, err := net.Listen("tcp", address)
 
