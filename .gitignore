@@ -26,3 +26,6 @@ db.json
 .DS_Store
 
 .env
+
+# Claude Code
+.claude/
