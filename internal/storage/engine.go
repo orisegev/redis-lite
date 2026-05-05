@@ -5,16 +5,52 @@ import (
 	"time"
 )
 
+const cleanupInterval = time.Second
+
 type Engine struct {
 	data   map[string]string
 	expiry map[string]time.Time
 	mu     sync.RWMutex
+	done   chan struct{}
 }
 
 func NewEngine() *Engine {
-	return &Engine{
+	e := &Engine{
 		data:   make(map[string]string),
 		expiry: make(map[string]time.Time),
+		done:   make(chan struct{}),
+	}
+	go e.cleanupLoop()
+	return e
+}
+
+// Close stops the background cleanup goroutine.
+func (e *Engine) Close() {
+	close(e.done)
+}
+
+func (e *Engine) cleanupLoop() {
+	ticker := time.NewTicker(cleanupInterval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ticker.C:
+			e.deleteExpired()
+		case <-e.done:
+			return
+		}
+	}
+}
+
+func (e *Engine) deleteExpired() {
+	now := time.Now()
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	for k, exp := range e.expiry {
+		if now.After(exp) {
+			delete(e.data, k)
+			delete(e.expiry, k)
+		}
 	}
 }
 

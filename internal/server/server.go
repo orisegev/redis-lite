@@ -26,7 +26,14 @@ func New(cfg config.Config) *Server {
 	}
 }
 
+// Close stops the engine's background cleanup goroutine.
+func (s *Server) Close() {
+	s.storage.Close()
+}
+
 func (s *Server) Start(ctx context.Context) error {
+	defer s.storage.Close()
+
 	addr := net.JoinHostPort("0.0.0.0", s.cfg.Port)
 	listener, err := net.Listen("tcp", addr)
 	if err != nil {

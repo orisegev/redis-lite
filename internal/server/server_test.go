@@ -19,7 +19,10 @@ func startPipe(t *testing.T, srv *Server) (client net.Conn, cleanup func()) {
 	t.Helper()
 	client, serverSide := net.Pipe()
 	go srv.handleConnection(serverSide)
-	return client, func() { client.Close() }
+	return client, func() {
+		client.Close()
+		srv.Close()
+	}
 }
 
 func send(t *testing.T, r *bufio.Reader, w net.Conn, cmd string) string {
